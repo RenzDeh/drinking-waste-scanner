@@ -273,6 +273,7 @@ onBeforeUnmount(() => {
         <img src="/icon.svg" alt="" width="28" height="28" />
         <span>Statiegeld-scanner</span>
       </div>
+      <slot name="toggle" />
       <span class="status-chip" :class="statusChip.tone"><i></i>{{ statusChip.text }}</span>
     </header>
 
@@ -379,15 +380,22 @@ onBeforeUnmount(() => {
 .topbar {
   align-self: center;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 6px 6px 6px 14px;
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 28px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+@media (max-width: 520px) {
+  .brand span {
+    display: none;
+  }
 }
 .brand {
   display: flex;

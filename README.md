@@ -2,6 +2,13 @@
 
 Webapp die blikjes, PET-flessen en glazen flessen herkent met een objectdetectiemodel dat **in de browser, op het toestel** draait. Na een scan toont een popup wat het is en in welke vuilbak het hoort (PMD-zak of glasbak).
 
+Met een schakelaar bovenaan kies je tussen twee **volledig gescheiden** modi:
+
+| Modus | Hoe | Privacy |
+| --- | --- | --- |
+| **Roboflow** | Eigen getraind model (AutoML), draait met `inferencejs` in de browser | Beelden verlaten het toestel nooit |
+| **Gemini** | Eén foto per druk op *Scan* naar Google Gemini (geen dataset, geen training) | De foto gaat naar Google |
+
 > Howest MCT — AutoML-opdracht · Naam: _[jouw naam]_ · Live: _[https://… .vercel.app]_
 
 ---
@@ -41,6 +48,16 @@ npm run dev                 # http://localhost:5173
 | `VITE_ROBOFLOW_PUBLISHABLE_KEY` | Roboflow › Settings › API Keys › _Publishable API Key_ (`rf_…`) |
 | `VITE_ROBOFLOW_MODEL` | Project-slug (bv. `drinking-waste-ab12c`) of volledige model-id `workspace/model-slug` |
 | `VITE_ROBOFLOW_VERSION` | Versienummer van het getrainde model (leeg laten bij een volledige model-id) |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey). **Zonder** `VITE_`-prefix: de sleutel blijft op de server |
+| `GEMINI_MODEL` | Optioneel, standaard `gemini-3.5-flash` (met terugval bij drukte) |
+
+### Gemini-modus: hoe de sleutel veilig blijft
+
+De browser stuurt de foto naar **`/api/gemini`** op onze eigen server; enkel die praat met Google.
+
+- Lokaal (`npm run dev` / `npm run phone`): een kleine Vite-plugin in `vite.config.js` handelt `/api/gemini` af.
+- Op Vercel: de serverless functie `api/gemini.js`. Zet `GEMINI_API_KEY` bij *Settings › Environment Variables*. Deploy via Git-import of `npm run deploy` (bouwt op Vercel, zodat de functie mee gaat).
+- Beide gebruiken dezelfde code: `server/gemini.js` (prompt, JSON-schema, terugval tussen modellen).
 
 ---
 
@@ -62,6 +79,7 @@ npm run dev                 # http://localhost:5173
 ## Privacy
 
 - **Inferentie op het toestel:** het model draait in de browser met [`inferencejs`](https://www.npmjs.com/package/inferencejs) (TensorFlow.js in een Web Worker). De publishable key wordt enkel gebruikt om de modelgewichten te downloaden. **Camerabeelden en frames verlaten het toestel nooit** en worden nergens opgeslagen.
+- **Gemini-modus is de uitzondering:** daar wordt bij elke druk op *Scan* één foto (max. 768 px) naar Google Gemini gestuurd. De pagina vermeldt dat duidelijk. De API-sleutel staat enkel op de server.
 - **Geen login, geen database:** geen account en geen server. Er wordt niets opgeslagen; de lijst "Deze sessie" bestaat enkel in het geheugen van de browser en verdwijnt bij het herladen.
 - Enkel een kruimelpad van de opstartstappen (tekst, geen beelden) staat in `localStorage`, om crashes op te sporen.
 
@@ -101,7 +119,7 @@ _[Bias: welke merken, kleuren, achtergronden of lichtomstandigheden zitten (niet
 
 | Tool | Waarvoor | Belangrijkste prompts | Wat heb ik zelf aangepast/gecontroleerd? |
 | --- | --- | --- | --- |
-| Claude Code | Opzet van de Vue-app, trigger-logica, debugging (iPhone-crash, vervorming van het beeld), README-template | _[..]_ | _[..]_ |
+| Claude Code | Opzet van de Vue-app, Gemini-modus met server-proxy, trigger-logica, debugging (iPhone-crash, vervorming van het beeld), README-template | _[..]_ | _[..]_ |
 | Roboflow | Annotatie (Label Assist), augmentatie, training RF-DETR en YOLO11 | — | _[..]_ |
 | _[..]_ | _[..]_ | _[..]_ | _[..]_ |
 
@@ -112,7 +130,11 @@ _[Bias: welke merken, kleuren, achtergronden of lichtomstandigheden zitten (niet
 ```
 src/
   config.js               klassen, drempels, detectie-instellingen
-  views/ScanView.vue      het scanscherm + resultaat-popup
+  App.vue                 schakelaar tussen de twee modi
+  views/ScanView.vue      Roboflow-modus (model op het toestel) + resultaat-popup
+  views/GeminiView.vue    Gemini-modus (foto naar /api/gemini)
+  services/gemini.js      foto nemen + /api/gemini aanroepen (client)
+  components/ModeToggle.vue  de schakelaar
   services/inference.js   inferencejs (model op het toestel), scangebied
   composables/useCamera.js camera (achtercamera, playsinline/muted voor iOS)
   lib/scanTrigger.js      state machine voor de trigger (getest in tests/)
@@ -121,5 +143,7 @@ src/
   lib/haptics.js          trilling (Android) / haptische tik (iOS 18+)
   lib/storage.js          localStorage met try/catch
 scripts/fetch-negatives.mjs  null images uit COCO
+server/gemini.js          Gemini-aanroep (serverkant, gedeeld door dev en Vercel)
+api/gemini.js             Vercel serverless functie
 vercel.json               SPA-routing + headers
 ```

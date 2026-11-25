@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "negatives": "node scripts/fetch-negatives.mjs",
-    "deploy": "vite build && node -e \"require('fs').copyFileSync('vercel.json','dist/vercel.json')\" && npx vercel@latest deploy dist --prod",
+    "deploy": "npx vercel@latest deploy --prod",
     "phone": "vite build && vite preview --host --mode phone --port 4173"
   },
   "dependencies": {
