@@ -27,6 +27,9 @@ export function useCamera() {
         audio: false,
         video: {
           facingMode: { ideal: 'environment' },
+          // 1280x720 geeft een vierkant scangebied van 720x720 => scherp genoeg voor een
+          // model van 640x640. Het verkleinen naar de modelgrootte gebeurt in inference.js,
+          // dus het geheugengebruik per frame blijft beperkt.
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },

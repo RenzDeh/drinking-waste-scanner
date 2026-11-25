@@ -8,6 +8,8 @@ const cfg = {
   clearFrames: 5,
   clearMinMs: 700,
   presenceThreshold: 0.4,
+  dropoutMs: 400,
+  keepThreshold: 0.4,
 }
 const det = (klasse, confidence) => [{ class: klasse, confidence }]
 
@@ -45,9 +47,52 @@ describe('scanTrigger', () => {
     expect(results.some((r) => r.fired)).toBe(false)
   })
 
-  it('reset bij één zwak frame', () => {
+  it('tolereert één zwak frame (kort dipje)', () => {
     const tr = createScanTrigger(cfg)
     const frames = [...Array(8).fill(det('blik', 0.95)), det('blik', 0.5), ...Array(8).fill(det('blik', 0.95))]
+    const fired = run(tr, frames).results.filter((r) => r.fired)
+    expect(fired).toHaveLength(1)
+    expect(fired[0].fired.zekerheid).toBe(0.95) // zwakke frames tellen niet mee in de zekerheid
+  })
+
+  it('tolereert even een andere klas', () => {
+    const tr = createScanTrigger(cfg)
+    const frames = [...Array(6).fill(det('pet', 0.95)), det('glas', 0.95), ...Array(6).fill(det('pet', 0.95))]
+    const fired = run(tr, frames).results.filter((r) => r.fired)
+    expect(fired).toHaveLength(1)
+    expect(fired[0].fired.klasse).toBe('pet')
+  })
+
+  it('reset bij een lange onderbreking (> dropoutMs)', () => {
+    const tr = createScanTrigger(cfg)
+    const frames = [...Array(8).fill(det('blik', 0.95)), ...Array(5).fill([]), ...Array(8).fill(det('blik', 0.95))]
+    expect(run(tr, frames).results.some((r) => r.fired)).toBe(false)
+  })
+
+  it('vuurt nooit tijdens een dipje', () => {
+    const tr = createScanTrigger(cfg)
+    const frames = [...Array(10).fill(det('blik', 0.95)), [], []]
+    const { results } = run(tr, frames)
+    expect(results.findIndex((r) => r.fired)).toBe(-1)
+  })
+
+  it('hysterese: eens gestart mag de zekerheid zakken tot keepThreshold', () => {
+    const tr = createScanTrigger(cfg)
+    const frames = [det('pet', 0.95), ...Array(10).fill(det('pet', 0.5)), det('pet', 0.92)]
+    const fired = run(tr, frames).results.filter((r) => r.fired)
+    expect(fired).toHaveLength(1)
+    expect(fired[0].fired.zekerheid).toBe(0.92) // enkel sterke frames bepalen de zekerheid
+  })
+
+  it('hysterese: vuurt pas op een sterk frame, niet op een zwak', () => {
+    const tr = createScanTrigger(cfg)
+    const { results } = run(tr, [det('pet', 0.95), ...Array(15).fill(det('pet', 0.5))])
+    expect(results.some((r) => r.fired)).toBe(false)
+  })
+
+  it('hysterese: onder keepThreshold telt als onderbreking', () => {
+    const tr = createScanTrigger(cfg)
+    const frames = [det('pet', 0.95), ...Array(10).fill(det('pet', 0.3)), det('pet', 0.95)]
     expect(run(tr, frames).results.some((r) => r.fired)).toBe(false)
   })
 

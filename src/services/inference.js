@@ -66,15 +66,27 @@ export function preloadModel() {
 }
 
 /**
- * Vierkant scangebied in het midden van het beeld.
- * Het model verwacht een vierkant beeld (384x384) en inferencejs REKT elk beeld daarnaartoe.
- * Een breed (16:9) of hoog (9:16) camerabeeld zou dan vervormen: een blikje wordt een
- * "flesje", een grote PET-fles een slanke "glazen fles". Daarom knippen we eerst een
- * vierkant uit het midden, zonder vervorming.
+ * Scangebied in het midden van het beeld (breedte/hoogte = `aspect`).
+ * Het model krijgt altijd een vierkant beeld; dit gebied wordt daarnaartoe GEREKT.
+ *
+ * Belangrijk: het model moet de items zien zoals in de trainingsfoto's. Roboflow
+ * ("Resize: Stretch to 640x640") rekt een staande iPhone-foto (3:4) samen tot een vierkant,
+ * waardoor alles lager en breder wordt. Met aspect 3:4 doen we in de app precies hetzelfde.
+ * Met aspect 1 (vierkant) is er geen vervorming; dan lijkt een PET-fles slanker dan in de
+ * training en wordt ze sneller voor een glazen fles aangezien.
  */
-export function scanRegion(videoWidth, videoHeight) {
-  const size = Math.min(videoWidth, videoHeight)
-  return { x: Math.round((videoWidth - size) / 2), y: Math.round((videoHeight - size) / 2), size }
+export function scanRegion(videoWidth, videoHeight, aspect = DETECTION.regionAspect ?? 1) {
+  let w, h
+  if (videoWidth / videoHeight > aspect) {
+    h = videoHeight
+    w = h * aspect
+  } else {
+    w = videoWidth
+    h = w / aspect
+  }
+  w = Math.round(w)
+  h = Math.round(h)
+  return { x: Math.round((videoWidth - w) / 2), y: Math.round((videoHeight - h) / 2), w, h }
 }
 
 /**
@@ -82,26 +94,45 @@ export function scanRegion(videoWidth, videoHeight) {
  * Geeft [{ class, confidence, bbox: { x, y, width, height } }] terug, waarbij x/y het
  * MIDDELPUNT van het kader is, in pixels van de VOLLEDIGE video (videoWidth x videoHeight).
  */
+// Eén herbruikbaar canvas waarop we het scangebied verkleind tekenen.
+let frameCanvas = null
+
 export async function detect(video, debugCanvas = null) {
   const workerId = await loadModel()
   const engine = await getEngine()
   const r = scanRegion(video.videoWidth, video.videoHeight)
-  // ImageBitmap wordt naar de worker gestuurd; het frame blijft in het geheugen van het toestel.
-  const bitmap = await createImageBitmap(video, r.x, r.y, r.size, r.size)
+
+  // GEHEUGEN (iOS): inferencejs stuurt het ImageBitmap naar zijn worker en geeft het daar
+  // niet expliciet vrij. Met volle camerabeelden (720x720+) loopt het geheugen op een
+  // iPhone snel vol en crasht Safari ("A problem repeatedly occurred"). Daarom verkleinen
+  // we het scangebied eerst tot de inputgrootte van het model; dat doet het model toch.
+  const s = DETECTION.inputSize
+  frameCanvas ??= Object.assign(document.createElement('canvas'), { width: s, height: s })
+  const fctx = frameCanvas.getContext('2d', { willReadFrequently: false })
+  fctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, s, s) // rekt het gebied tot s x s
   // Debug: toon exact het beeld dat naar het model gaat (lokaal, wordt nergens bewaard)
   if (debugCanvas) {
     try {
-      debugCanvas.getContext('2d').drawImage(bitmap, 0, 0, debugCanvas.width, debugCanvas.height)
+      debugCanvas.getContext('2d').drawImage(frameCanvas, 0, 0, debugCanvas.width, debugCanvas.height)
     } catch {
       /* negeren */
     }
   }
+  const bitmap = await createImageBitmap(frameCanvas)
+  const scaleX = r.w / s
+  const scaleY = r.h / s
   try {
     // options worden in de worker als model.configure(...options) toegepast
     const result = await engine.infer(workerId, bitmap, [{ scoreThreshold: DETECTION.modelScoreThreshold }])
+    // kaders terug naar pixels van de volledige video
     return normalizeDetections(Array.isArray(result) ? result : []).map((d) => ({
       ...d,
-      bbox: { ...d.bbox, x: d.bbox.x + r.x, y: d.bbox.y + r.y },
+      bbox: {
+        x: d.bbox.x * scaleX + r.x,
+        y: d.bbox.y * scaleY + r.y,
+        width: d.bbox.width * scaleX,
+        height: d.bbox.height * scaleY,
+      },
     }))
   } finally {
     try {
