@@ -8,7 +8,9 @@
     "dev:phone": "vite --host --mode phone",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "negatives": "node scripts/fetch-negatives.mjs",
+    "deploy": "vite build && node -e \"require('fs').copyFileSync('vercel.json','dist/vercel.json')\" && npx vercel@latest deploy dist --prod"
   },
   "dependencies": {
     "firebase": "^13.4.0",

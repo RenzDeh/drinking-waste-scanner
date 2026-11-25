@@ -55,7 +55,8 @@ Zonder Firebase-variabelen draait de app in **lokale modus** (scans in `localSto
 
 - **Bron:** [Drinking Waste Classification](https://www.kaggle.com/datasets/arkadiyhacks/drinking-waste-classification) (Kaggle, licentie **CC0**).
 - **Omvang:** ~1.377 foto's geüpload naar Roboflow.
-- **Klassen (3):** `blik`, `pet`, `glas`. _[Vermeld wat je met de 4e klasse uit de originele dataset (HDPE/melk) gedaan hebt.]_
+- **Klassen (3):** `can`, `pet`, `glass` in het model; de app vertaalt die naar `blik`, `pet`, `glas` (`MODEL_LABELS` in `src/config.js`). _[Vermeld wat je met de 4e klasse uit de originele dataset (HDPE/melk) gedaan hebt.]_
+- **Negatieve beelden (null images):** 300 foto's zonder blik/fles uit [COCO val2017](https://cocodataset.org) (annotaties CC BY 4.0, beelden met Flickr-licentie per foto, zie `negatives/CREDITS.csv`): ~65% met een persoon groot in beeld, ~35% binnenruimtes. Toegevoegd nadat versie 2 een persoon voor de webcam als "blikje" (90%) herkende. Opnieuw aan te maken met `npm run negatives`.
 - **Annotatie:** _[hoe heb je de bounding boxes gemaakt? Auto-label / handmatig / gecontroleerd?]_
 - **Split:** _[train / valid / test, bv. 70/20/10]_
 - **Preprocessing:** _[bv. auto-orient, resize 384×384]_
@@ -69,7 +70,7 @@ Zonder Firebase-variabelen draait de app in **lokale modus** (scans in `localSto
 - **Inferentie op het toestel:** het model draait in de browser met [`inferencejs`](https://www.npmjs.com/package/inferencejs) (TensorFlow.js in een Web Worker). De publishable key wordt enkel gebruikt om de modelgewichten te downloaden. **Camerabeelden en frames verlaten het toestel nooit** en worden nergens opgeslagen.
 - **Geen login:** geen account, e-mail of wachtwoord. Enkel een zelfgekozen bijnaam en een willekeurig speler-ID in `localStorage`.
 - **Minimale opslag:** per scan bewaart Firestore enkel `{ spelerId, bijnaam, klasse, punten, zekerheid, tijdstip }`.
-- **Security rules:** enkel lezen en aanmaken, geen updaten of verwijderen; elk scan-document wordt gevalideerd (exacte velden, klasse uit de lijst, punten per klasse, zekerheid > 0,9, servertijd).
+- **Security rules:** enkel lezen en aanmaken, geen updaten of verwijderen; elk scan-document wordt gevalideerd (exacte velden, klasse uit de lijst, punten per klasse, zekerheid > 0,55, servertijd).
 - _[Beperking: zonder auth kan iemand met technische kennis nog steeds rechtstreeks geldige scans aanmaken. Bespreek dit.]_
 
 ---
@@ -78,9 +79,9 @@ Zonder Firebase-variabelen draait de app in **lokale modus** (scans in `localSto
 
 Instelbaar in [`src/config.js`](src/config.js):
 
-- Een scan telt pas als **dezelfde klasse minstens 1 s aaneengesloten > 90 %** zekerheid heeft.
+- Een scan telt pas als **dezelfde klasse minstens 1 s aaneengesloten > 55 %** zekerheid heeft.
 - Daarna **cooldown**: het item moet eerst uit beeld (5 frames én 0,7 s zonder detectie) voor er een volgende scan telt.
-- Een andere klasse, één zwak frame of een pauze van meer dan 600 ms tussen frames zet de teller terug op nul.
+- Een andere klasse, één zwak frame of een pauze van meer dan 1,5 s tussen frames zet de teller terug op nul.
 
 ---
 

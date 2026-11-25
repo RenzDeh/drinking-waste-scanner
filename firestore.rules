@@ -5,7 +5,7 @@ rules_version = '2';
 // - Iedereen mag een scan AANMAKEN, maar enkel met exact de verwachte velden en geldige waarden.
 // - Updaten en verwijderen is nooit toegestaan.
 // - Alle andere collecties zijn dicht.
-// Hou de punten en de zekerheidsdrempel (0.9) in sync met src/config.js
+// Hou de punten en de zekerheidsdrempel (0.55) in sync met src/config.js
 // (POINTS, TRIGGER.confidenceThreshold en DAILY_CHALLENGES.bonus).
 
 service cloud.firestore {
@@ -29,9 +29,9 @@ service cloud.firestore {
     }
 
     function validPoints(d) {
-      return (d.klasse == 'blik' && d.punten == 10 && d.zekerheid > 0.9 && d.zekerheid <= 1)
-          || (d.klasse == 'pet'  && d.punten == 10 && d.zekerheid > 0.9 && d.zekerheid <= 1)
-          || (d.klasse == 'glas' && d.punten == 5  && d.zekerheid > 0.9 && d.zekerheid <= 1)
+      return (d.klasse == 'blik' && d.punten == 10 && d.zekerheid > 0.55 && d.zekerheid <= 1)
+          || (d.klasse == 'pet'  && d.punten == 10 && d.zekerheid > 0.55 && d.zekerheid <= 1)
+          || (d.klasse == 'glas' && d.punten == 5  && d.zekerheid > 0.55 && d.zekerheid <= 1)
           // bonus van het dagdoel
           || (d.klasse == 'bonus' && d.punten >= 1 && d.punten <= 50 && d.zekerheid == 1);
     }

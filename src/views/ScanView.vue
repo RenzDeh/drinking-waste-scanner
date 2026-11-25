@@ -2,16 +2,18 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useCamera } from '../composables/useCamera'
 import { useChallenge } from '../composables/useChallenge'
-import { detect, inferenceConfigError, loadModel } from '../services/inference'
+import { detect, inferenceConfigError, loadModel, MODEL_LABEL, scanRegion } from '../services/inference'
 import { firebaseEnabled, saveScan } from '../services/scans'
 import { playerState } from '../services/player'
 import { createScanTrigger } from '../lib/scanTrigger'
 import { buzz } from '../lib/haptics'
+import { boxRejectReason } from '../lib/boxFilter'
 import { BONUS_CLASS, CLASS_INFO, CLASSES, DETECTION, POINTS, TRIGGER } from '../config'
 import ChallengeCard from '../components/ChallengeCard.vue'
 
 const video = ref(null)
 const canvas = ref(null)
+const debugCanvas = ref(null)
 const camera = useCamera()
 
 const modelStatus = ref('idle') // idle | loading | ready | error
@@ -25,6 +27,8 @@ const fps = ref(0)
 const sessionPoints = ref(0)
 const pops = ref([])
 const toast = ref('')
+const tooBig = ref(false)
+const debugTop = ref('')
 
 let running = false
 let popId = 0
@@ -45,6 +49,7 @@ const statusLine = computed(() => {
   if (modelStatus.value === 'loading') return 'Model laden op je toestel…'
   if (cooldown.value) return 'Top! Haal het item uit beeld voor de volgende scan.'
   if (candidate.value) return `${CLASS_INFO[candidate.value]?.label ?? candidate.value} herkend — even stilhouden…`
+  if (tooBig.value) return 'Te dichtbij of geen item: houd het blikje/de fles kleiner in beeld, binnen de cirkel.'
   if (noDetection.value) return 'Geen blik of fles in beeld. Houd het item centraal en goed belicht.'
   return 'Richt de camera op een blikje of fles.'
 })
@@ -96,16 +101,25 @@ function draw(detections) {
   const ctx = c.getContext('2d')
   ctx.clearRect(0, 0, c.width, c.height)
   const unit = Math.max(c.width, c.height) / 400
+
+  // Buiten het vierkante scangebied kijkt het model niet: dat deel dimmen
+  const r = scanRegion(c.width, c.height)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)'
+  ctx.fillRect(0, 0, c.width, r.y)
+  ctx.fillRect(0, r.y + r.size, c.width, c.height - r.y - r.size)
+  ctx.fillRect(0, r.y, r.x, r.size)
+  ctx.fillRect(r.x + r.size, r.y, c.width - r.x - r.size, r.size)
   ctx.lineWidth = Math.max(2, unit * 1.5)
   ctx.font = `600 ${Math.round(unit * 9)}px system-ui, -apple-system, sans-serif`
   ctx.textBaseline = 'top'
 
   for (const d of detections) {
-    const color = CLASS_INFO[d.class]?.color ?? '#ffffff'
+    // Afgekeurde kaders (bv. een persoon) grijs en gestreept tekenen
+    const color = d.reject ? '#9aa5a0' : (CLASS_INFO[d.class]?.color ?? '#ffffff')
     // bbox.x/y = middelpunt
     const x = d.bbox.x - d.bbox.width / 2
     const y = d.bbox.y - d.bbox.height / 2
-    const strong = d.confidence > TRIGGER.confidenceThreshold
+    const strong = !d.reject && d.confidence > TRIGGER.confidenceThreshold
     ctx.strokeStyle = color
     ctx.setLineDash(strong ? [] : [unit * 4, unit * 3])
     ctx.beginPath()
@@ -113,7 +127,9 @@ function draw(detections) {
     ctx.stroke()
     ctx.setLineDash([])
 
-    const label = `${CLASS_INFO[d.class]?.label ?? d.class} ${Math.round(d.confidence * 100)}%`
+    const label = d.reject
+      ? `genegeerd (${d.reject === 'te-groot' ? 'te groot' : 'te klein'})`
+      : `${CLASS_INFO[d.class]?.label ?? d.class} ${Math.round(d.confidence * 100)}%`
     const pad = unit * 2.5
     const tw = ctx.measureText(label).width
     const th = unit * 9
@@ -142,8 +158,15 @@ async function loop() {
     const t0 = performance.now()
     let detections = []
     try {
-      const raw = await detect(video.value)
-      detections = raw.filter((d) => d.bbox && d.confidence >= DETECTION.displayThreshold)
+      const raw = await detect(video.value, DETECTION.showDebug ? debugCanvas.value : null)
+      const v = video.value
+      detections = raw
+        .filter((d) => d.bbox && d.confidence >= DETECTION.displayThreshold)
+        // grootte relatief t.o.v. het vierkante scangebied
+        .map((d) => {
+          const { size } = scanRegion(v.videoWidth, v.videoHeight)
+          return { ...d, reject: boxRejectReason(d, size, size, DETECTION) }
+        })
       failures = 0
     } catch (e) {
       console.error(e)
@@ -157,10 +180,17 @@ async function loop() {
     if (!running) break
     const t = performance.now()
     now.value = t
-    if (detections.length) lastSeenAt.value = t
+    // Enkel plausibele kaders tellen voor de trigger; afgekeurde worden wel getekend.
+    const valid = detections.filter((d) => !d.reject)
+    const top = detections[0] // inferencejs sorteert op zekerheid
+    debugTop.value = top
+      ? `${CLASS_INFO[top.class]?.label ?? top.class} ${Math.round(top.confidence * 100)}%${top.reject ? ' (genegeerd)' : ''}`
+      : `niets ≥ ${Math.round(DETECTION.modelScoreThreshold * 100)}%`
+    tooBig.value = valid.length === 0 && detections.some((d) => d.reject === 'te-groot')
+    if (valid.length) lastSeenAt.value = t
     draw(detections)
 
-    const r = trigger.update(detections, t)
+    const r = trigger.update(valid, t)
     progress.value = r.progress
     candidate.value = r.candidate
     cooldown.value = r.state === 'cooldown'
@@ -229,6 +259,7 @@ const ringDash = computed(() => `${progress.value * 289} 289`)
     <div class="viewport">
       <video ref="video" class="feed" autoplay playsinline muted></video>
       <canvas ref="canvas" class="overlay"></canvas>
+      <canvas v-show="DETECTION.showDebug && modelStatus === 'ready'" ref="debugCanvas" class="debug-view" width="112" height="112" title="Beeld dat naar het model gaat"></canvas>
 
       <!-- Richtkader met voortgangsring (1 s vasthouden) -->
       <div v-if="modelStatus === 'ready' && camera.status.value === 'ready'" class="reticle" :class="{ done: cooldown }">
@@ -244,6 +275,7 @@ const ringDash = computed(() => `${progress.value * 289} 289`)
           <span class="chip"><strong>{{ sessionPoints }}</strong> pt deze sessie</span>
           <span v-if="modelStatus === 'ready'" class="chip muted">{{ fps }} fps · op toestel</span>
           <span v-if="!firebaseEnabled" class="chip warn">lokale modus</span>
+          <span v-if="DETECTION.showDebug && modelStatus === 'ready'" class="chip muted">model {{ MODEL_LABEL }}: {{ debugTop || '…' }}</span>
         </div>
       </div>
 
@@ -318,6 +350,17 @@ const ringDash = computed(() => `${progress.value * 289} 289`)
 }
 .overlay {
   pointer-events: none;
+}
+.debug-view {
+  position: absolute;
+  right: 16px;
+  bottom: 84px;
+  width: 112px;
+  height: 112px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: #000;
+  z-index: 2;
 }
 .reticle {
   position: absolute;

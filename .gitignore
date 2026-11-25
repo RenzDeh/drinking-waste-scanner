@@ -6,3 +6,7 @@ dist
 .vercel
 *.log
 .DS_Store
+
+# negatieve beelden (lokaal, worden naar Roboflow geüpload)
+negatives
+.cache
