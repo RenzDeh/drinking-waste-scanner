@@ -1,149 +1,85 @@
-# Statiegeld-scanner ♻️
+# Statiegeld-scanner
 
-Webapp die blikjes, PET-flessen en glazen flessen herkent met een objectdetectiemodel dat **in de browser, op het toestel** draait. Na een scan toont een popup wat het is en in welke vuilbak het hoort (PMD-zak of glasbak).
+Renz Deheegher - Howest MCT - AutoML-opdracht
 
-Met een schakelaar bovenaan kies je tussen twee **volledig gescheiden** modi:
+De demovideo staat in de map `demo/` (tester was Abdullah).
 
-| Modus | Hoe | Privacy |
-| --- | --- | --- |
-| **Roboflow** | Eigen getraind model (AutoML), draait met `inferencejs` in de browser | Beelden verlaten het toestel nooit |
-| **Gemini** | Eén foto per druk op *Scan* naar Google Gemini (geen dataset, geen training) | De foto gaat naar Google |
+## Wat doet de app?
 
-> Howest MCT — AutoML-opdracht · Naam: _[jouw naam]_ · Live: _[https://… .vercel.app]_
+Je houdt een blikje, PET-fles of glazen fles voor de camera. Als je het ongeveer een seconde stilhoudt, krijg je een popup met wat het is en in welke vuilbak het moet (PMD of glas).
 
----
+Bovenaan kan je wisselen tussen twee modi:
 
-## Track
+- Roboflow: mijn eigen getraind model, dat gewoon in de browser draait via een model-URL. Je foto wordt dus nergens naartoe gestuurd.
+- Gemini: je drukt op Scan en er wordt een foto naar Gemini (Flash) gestuurd, dat zegt wat het ziet. Hier wordt de foto dus wel naar Google gestuurd.
 
-**Track D — eigen idee.**
+## Dataset en modellen
 
-_[Beschrijf in 2–3 zinnen het idee en waarom je het gekozen hebt.]_
+Ik ben gestart met een dataset van Kaggle (Drinking Waste Classification) met ongeveer 1.400 foto's van PET-flesjes, glazen flesjes en blikken. Na wat opzoeken heb ik dat in Roboflow gestopt, omdat je daar makkelijk extra data kan toevoegen (roboflow heeft zelf ook veel datasets) en kleine modellen kan trainen die in de browser werken.
 
----
+Vanaf versie 2 heb ik ook eigen foto's toegevoegd die ik met mijn gsm nam (flessen en blikjes in mijn hand, op verschillende plekken). In de latere versies heb ik er ook foto's aan toegevoegd van random dingen die geen flessen zijn (mensen, kamers), als een soort null-klasse, gezien een mens vaak als blik werd gezien :).
 
-## Hoe starten
+Ik heb RF-DETR en YOLOv11 getraind, allebei in Nano en Small. In nauwkeurigheid was er amper verschil, het zijn allebei simpele modellen. Het grootste verschil was dat RF-DETR mijn iPhone-browser liet crashen (te zwaar), terwijl YOLOv11 wel werkte op mobiel.
 
-Vereisten: Node.js 20+ en npm.
+## Uitbreidingen
 
-```powershell
+- Trigger moeilijker te foppen: de null-klasse met foto's zonder flessen, een item moet ongeveer 1 seconde herkend worden en je moet het vorige item eerst uit beeld halen voor je opnieuw kan scannen. Iets dat bijna het hele beeld vult (zoals een persoon) telt ook niet.
+- Twee modellen vergeleken in RoboFlow: RF-DETR en YOLOv11 (Nano en Small).
+- Gemini toegevoegd als extra modus. Dat is een AI-model, dus zonder dataset. Vergelijking : Gemini zag een plastic colafles meteen als PET-fles, mijn YOLO-model zei blik gezien het rode kleur. Dit kwam doordat het YOLO-model zich baseerde op het kleur van de dataset, daar waren veel rode blikjes cola aanwezig.
+
+## Waar het model faalde
+
+| Situatie                                 | Probleem                                                               | Wat ik aanpaste                                                                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fel licht van de ramen in ons lokaal     | Het item was niet meer zichtbaar, het model herkende niks of twijfelde | Foto's in ander licht toegevoegd en de drempel wat lager gezet (55%). Niet met je rug naar het raam scannen.                                                                                                |
+| Rode kleur (veel colablikjes in de data) | Bij rood zei hij vaak blik, ook als het een fles was                   | Meer verschillende foto's en op de laptop RF-DETR gebruikt, die had hier minder last van. Ook wanneer ik de dop beter in beeld bracht ging dit veel beter.                                                  |
+| Doorzichtig glas en PET zonder etiket    | Hij zag moeilijk het verschil tussen PET en glas                       | Meer foto's van PET-flessen toegevoegd, en het camerabeeld op dezelfde manier bijgesneden als mijn trainingsfoto's. Zoals bij de colablikjes hielp het enorm wanneer ik de dop duidelijker in beeld bracht. |
+
+## Opstarten
+
+Je hebt Node.js nodig.
+
+```
 npm install
-copy .env.example .env      # vul daarna je eigen sleutels in
-npm run dev                 # http://localhost:5173
+copy .env.example .env
 ```
 
-| Script | Wat het doet |
-| --- | --- |
-| `npm run dev` | Dev-server op localhost (camera werkt op localhost zonder HTTPS) |
-| `npm run dev:phone` | Dev-server op je lokale netwerk met zelfondertekend HTTPS, om met je telefoon te testen |
-| `npm run phone` | Productiebuild op je lokale netwerk via HTTPS (lichter dan de dev-server) |
-| `npm run deploy` | Productiebuild en deploy naar Vercel via de Vercel CLI |
-| `npm run negatives` | Stelt 300 null images (geen blik/fles) samen uit COCO |
-| `npm test` | Unit tests van de scan-trigger |
-| `npm run build` | Productiebuild in `dist/` |
+In `.env` vul je in:
 
-### Omgevingsvariabelen (`.env`)
+- `VITE_ROBOFLOW_PUBLISHABLE_KEY`: de publishable key van Roboflow
+- `VITE_ROBOFLOW_MODEL`: het model (bv. `renzs-workspace-tkpgh/drinking-wast-detection-4-rfdetr-nano-t1`)
+- `GEMINI_API_KEY`: alleen nodig voor de Gemini-modus
 
-| Variabele | Waar vind je die? |
-| --- | --- |
-| `VITE_ROBOFLOW_PUBLISHABLE_KEY` | Roboflow › Settings › API Keys › _Publishable API Key_ (`rf_…`) |
-| `VITE_ROBOFLOW_MODEL` | Project-slug (bv. `drinking-waste-ab12c`) of volledige model-id `workspace/model-slug` |
-| `VITE_ROBOFLOW_VERSION` | Versienummer van het getrainde model (leeg laten bij een volledige model-id) |
-| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey). **Zonder** `VITE_`-prefix: de sleutel blijft op de server |
-| `GEMINI_MODEL` | Optioneel, standaard `gemini-3.5-flash` (met terugval bij drukte) |
+Zet in `src/config.js` ook `inputSize` juist: 384 voor RF-DETR, 640 voor YOLOv11.
 
-### Gemini-modus: hoe de sleutel veilig blijft
+**Op pc**
 
-De browser stuurt de foto naar **`/api/gemini`** op onze eigen server; enkel die praat met Google.
+1. `npm run dev`
+2. Open http://localhost:5173 in Chrome en laat de camera toe.
 
-- Lokaal (`npm run dev` / `npm run phone`): een kleine Vite-plugin in `vite.config.js` handelt `/api/gemini` af.
-- Op Vercel: de serverless functie `api/gemini.js`. Zet `GEMINI_API_KEY` bij *Settings › Environment Variables*. Deploy via Git-import of `npm run deploy` (bouwt op Vercel, zodat de functie mee gaat).
-- Beide gebruiken dezelfde code: `server/gemini.js` (prompt, JSON-schema, terugval tussen modellen).
+**Op gsm**
 
----
+1. Laptop en gsm op hetzelfde wifi zetten. Op school lukt dat meestal niet, dan gebruik je de hotspot van je gsm.
+2. `npm run phone`
+3. Open het Wi-Fi-adres dat in de terminal staat op je gsm (bv. `https://192.168.1.20:4173`).
+4. Je krijgt een waarschuwing over het certificaat, klik op "Toon details" en "Bezoek deze website".
 
-## Dataset
+Blijft hij hangen op 0 fps? Sluit alle tabbladen van de app en de browser, en open hem opnieuw in één tabblad.
 
-- **Bron:** [Drinking Waste Classification](https://www.kaggle.com/datasets/arkadiyhacks/drinking-waste-classification) (Kaggle, licentie **CC0**).
-- **Omvang:** ~1.377 foto's geüpload naar Roboflow.
-- **Klassen (3):** `can`, `pet`, `glass` in het model; de app vertaalt die naar `blik`, `pet`, `glas` (`MODEL_LABELS` in `src/config.js`). _[Vermeld wat je met de 4e klasse uit de originele dataset (HDPE/melk) gedaan hebt.]_
-- **Negatieve beelden (null images):** 300 foto's zonder blik/fles uit [COCO val2017](https://cocodataset.org) (annotaties CC BY 4.0, beelden met Flickr-licentie per foto, zie `negatives/CREDITS.csv`): ~65% met een persoon groot in beeld, ~35% binnenruimtes. Toegevoegd nadat versie 2 een persoon voor de webcam als "blikje" (90%) herkende. Opnieuw aan te maken met `npm run negatives`.
-- **Annotatie:** _[hoe heb je de bounding boxes gemaakt? Auto-label / handmatig / gecontroleerd?]_
-- **Split:** _[train / valid / test, bv. 70/20/10]_
-- **Preprocessing:** _[bv. auto-orient, resize 384×384]_
-- **Augmentatie:** _[bv. flip, rotatie ±15°, helderheid ±25%, blur, …]_ → _[aantal]_ trainingsbeelden.
-- **Model:** YOLO11 Nano (v5), getraind in Roboflow op 640×640. mAP@50: _[..]_ · precision: _[..]_ · recall: _[..]_
-- **Modelkeuze:** RF-DETR Nano (v2–v4) was accurater op onbekende foto's, maar Safari op de iPhone crashte tijdens het laden (29,4 M parameters). YOLO11 Nano (2,6 M parameters) laadt en draait wel op de iPhone. _[Licht toe.]_
+## Reflectie
 
----
+Mijn trigger is nog te foppen. Als je een foto van een blikje op een ander scherm toont, herkent hij die ook gewoon. Om dat moeilijker te maken zou je kunnen vragen om het item even te draaien, of het vanuit twee kanten laten scannen. Het "eerst uit beeld halen" en de null-klasse helpen al, maar een foto van een foto houden ze niet tegen.
 
-## Privacy
-
-- **Inferentie op het toestel:** het model draait in de browser met [`inferencejs`](https://www.npmjs.com/package/inferencejs) (TensorFlow.js in een Web Worker). De publishable key wordt enkel gebruikt om de modelgewichten te downloaden. **Camerabeelden en frames verlaten het toestel nooit** en worden nergens opgeslagen.
-- **Gemini-modus is de uitzondering:** daar wordt bij elke druk op *Scan* één foto (max. 768 px) naar Google Gemini gestuurd. De pagina vermeldt dat duidelijk. De API-sleutel staat enkel op de server.
-- **Geen login, geen database:** geen account en geen server. Er wordt niets opgeslagen; de lijst "Deze sessie" bestaat enkel in het geheugen van de browser en verdwijnt bij het herladen.
-- Enkel een kruimelpad van de opstartstappen (tekst, geen beelden) staat in `localStorage`, om crashes op te sporen.
-
----
-
-## Trigger (anti-fop)
-
-Instelbaar in [`src/config.js`](src/config.js):
-
-- Een scan telt pas als **dezelfde klasse minstens 1 s** herkend wordt (start > 55 %).
-- Daarna **cooldown**: het item moet eerst uit beeld (5 frames én 0,7 s zonder detectie) voor er een volgende scan telt.
-- Een kader dat meer dan 60 % van het scangebied bedekt (bv. een persoon) telt niet.
-- **Hysterese:** starten vraagt > 55 %, maar eens bezig mag dezelfde klasse zakken tot 40 % zonder onderbreking (de iPhone-camera schommelt meer dan een laptopwebcam); de scan zelf telt enkel op een frame > 55 %.
-- Korte dipjes (een zwak frame of even een andere klasse, < 0,4 s) worden getolereerd, omdat YOLO11 Nano per frame schommelt. Een langere onderbreking of een pauze van meer dan 1,5 s tussen frames zet de teller terug op nul. De getoonde zekerheid is de laagste zekerheid van de sterke frames.
-
----
-
-## Faalsituaties
-
-| # | Situatie | Wat ging er mis? | Aanpassing |
-| --- | --- | --- | --- |
-| 1 | _[bv. platgedrukt blikje]_ | _[..]_ | _[..]_ |
-| 2 | _[bv. doorzichtige PET-fles tegen lichte achtergrond]_ | _[..]_ | _[..]_ |
-| 3 | _[bv. foto van een fles op een ander scherm]_ | _[..]_ | _[..]_ |
-
----
-
-## Reflectie (max. 200 woorden)
-
-_[Foppen: hoe kan je het systeem misleiden (foto op scherm, hetzelfde blikje opnieuw scannen, …) en wat heb je daartegen gedaan?]_
-
-_[Bias: welke merken, kleuren, achtergronden of lichtomstandigheden zitten (niet) in de dataset? Voor wie werkt het model slechter?]_
-
----
+In mijn dataset zit ook bias. Veel blikjes waren cola, dus het model koppelde rood aan blik. Mijn eigen foto's waren telkens van hetzelfde flesje en blikje, thuis en met één gsm. Daardoor werkt hij slechter bij andere merken (bv. fanta was niet aanwezig en dus ook niet getest), ander licht of een andere camera. In de Roboflow-analyses haalde hij bijna 100%, maar in het echt was dat een stuk minder, omdat de testset te hard op de trainingsfoto's leek. Met meer verschillende merken, achtergronden en mensen zou het beter worden.
 
 ## AI-verantwoording
 
-| Tool | Waarvoor | Belangrijkste prompts | Wat heb ik zelf aangepast/gecontroleerd? |
-| --- | --- | --- | --- |
-| Claude Code | Opzet van de Vue-app, Gemini-modus met server-proxy, trigger-logica, debugging (iPhone-crash, vervorming van het beeld), README-template | _[..]_ | _[..]_ |
-| Roboflow | Annotatie (Label Assist), augmentatie, training RF-DETR en YOLO11 | — | _[..]_ |
-| _[..]_ | _[..]_ | _[..]_ | _[..]_ |
+Ik heb vooral Claude Code gebruikt. Dat heeft de Vue-app opgezet (camera, detectie, trigger, popup, design) en me geholpen met problemen oplossen, zoals de crash op mijn iPhone en het model dat mij als blikje zag. Ook de Gemini-koppeling werd toegevoegd door Claude aan de hand van mijn API-key. De opmaak voor deze readme heb ik ook door Claude laten maken zodat alles overzichtelijk blijft.
 
----
+Een paar prompts die ik gebruikte:
 
-## Projectstructuur
+- "Bouw een mobiele webapp Statiegeld-scanner met Vue 3, inferencejs en mijn Roboflow-model"
+- "Ik krijg constant 'a problem repeatedly occurred' op mijn iPhone, het model crasht"
+- "Voeg een Gemini-versie toe met een toggle om te switchen tussen de 2 versies, zonder Roboflow te breken"
 
-```
-src/
-  config.js               klassen, drempels, detectie-instellingen
-  App.vue                 schakelaar tussen de twee modi
-  views/ScanView.vue      Roboflow-modus (model op het toestel) + resultaat-popup
-  views/GeminiView.vue    Gemini-modus (foto naar /api/gemini)
-  services/gemini.js      foto nemen + /api/gemini aanroepen (client)
-  components/ModeToggle.vue  de schakelaar
-  services/inference.js   inferencejs (model op het toestel), scangebied
-  composables/useCamera.js camera (achtercamera, playsinline/muted voor iOS)
-  lib/scanTrigger.js      state machine voor de trigger (getest in tests/)
-  lib/boxFilter.js        filter op te grote/kleine kaders
-  lib/breadcrumbs.js      kruimelpad om crashes op te sporen
-  lib/haptics.js          trilling (Android) / haptische tik (iOS 18+)
-  lib/storage.js          localStorage met try/catch
-scripts/fetch-negatives.mjs  null images uit COCO
-server/gemini.js          Gemini-aanroep (serverkant, gedeeld door dev en Vercel)
-api/gemini.js             Vercel serverless functie
-vercel.json               SPA-routing + headers
-```
+Wat ik zelf deed: de dataset samenstellen, foto's nemen en labelen per class, alle modellen trainen en vergelijken, alles testen op laptop en gsm en de fouten terugkoppelen. Ik heb ook zelf keuzes gemaakt, zoals de drempel op 55% zetten ipv 80-90 wat Claude aanraadde, het puntensysteem schrappen en RF-DETR op pc en YOLOv11 op gsm gebruiken.
